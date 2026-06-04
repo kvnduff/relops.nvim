@@ -1,0 +1,119 @@
+*relops.nvim* Remote relative line operations for Neovim
+
+==============================================================================
+INTRODUCTION                                                         *relops*
+
+relops.nvim acts on remote relative line ranges without moving the cursor first.
+It provides compact normal-mode commands for delete, yank, change, and move.
+
+Repository: https://github.com/kvnduff/relops.nvim
+
+==============================================================================
+SETUP                                                           *relops-setup*
+
+Install with your plugin manager, then call: >lua
+
+  require("relops").setup()
+<
+
+Public API: >lua
+
+  require("relops").setup(opts)
+  require("relops").delete()
+  require("relops").yank()
+  require("relops").change()
+  require("relops").move()
+  require("relops").undo()
+  require("relops").redo()
+<
+
+Default mappings: >text
+
+  dr  delete remote relative range
+  yr  yank remote relative range
+  cr  change remote relative range
+  mr  move remote relative range
+<
+
+==============================================================================
+SYNTAX                                                         *relops-syntax*
+
+Delete, yank, and change read two relative targets: >text
+
+  dr15j18j   delete 15j through 18j
+  yr5k10k    yank 5k through 10k
+  cr5k8j     change 5k through 8j
+<
+
+Single-line shorthand repeats the same target when both directions match: >text
+
+  dr15jj     delete the line 15j
+  yr15kk     yank the line 15k
+<
+
+Move reads a source range and a destination. Lines are inserted before the
+destination line: >text
+
+  mr2j3j13j  move 2j..3j before 13j
+<
+
+Move-to-here shorthand uses a final repeated direction instead of a destination
+count: >text
+
+  mr13kkk    move 13k to the current cursor line
+  mr5k8jj    move 5k..8j to the current cursor line
+<
+
+==============================================================================
+CONFIG                                                         *relops-config*
+
+Defaults: >lua
+
+  require("relops").setup({
+    mappings = {
+      enabled = true,
+      delete = "dr",
+      yank = "yr",
+      change = "cr",
+      move = "mr",
+    },
+    yank_highlight = {
+      enabled = true,
+      group = "IncSearch",
+      duration = 180,
+    },
+    clipboard = {
+      unnamed = true,
+      yank_register = true,
+      delete_register = true,
+      system = true,
+      selection = true,
+    },
+    undo = {
+      wrap = false,
+    },
+    notifications = true,
+  })
+<
+
+Set any mapping to false or an empty string to skip it. Set
+`mappings.enabled = false` to skip all operation mappings.
+
+Undo wrapping is opt-in because mapping `u` and `<C-r>` can surprise users: >lua
+
+  require("relops").setup({
+    undo = { wrap = true },
+  })
+<
+
+==============================================================================
+TRADEOFFS                                                   *relops-tradeoffs*
+
+relops.nvim reads input after the operation mapping with |getcharstr()|. Native
+|showcmd| is therefore not supported for the in-progress range expression.
+
+Clipboard writes to + and * are protected and silently ignored when unavailable.
+<Esc> and <C-c> abort cleanly without mutating the buffer.
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:

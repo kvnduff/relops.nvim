@@ -1,0 +1,7 @@
+.DS_Store
+.cache/
+luacov.*
+tmp/
+nvim.log
+*.swp
+*.swo
