@@ -1,7 +1,10 @@
 .DS_Store
+.codex/
+AGENTS.md
 .cache/
 luacov.*
 tmp/
 nvim.log
+doc/tags
 *.swp
 *.swo
