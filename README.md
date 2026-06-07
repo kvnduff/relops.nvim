@@ -73,12 +73,14 @@ The default mappings are:
 | `mr` | Move a remote relative line range |
 
 After the operation mapping, type a compact range expression using relative line counts and `j` or `k` directions.
+Use `0` for the current cursor line when the current line is the second endpoint of a range or a move destination.
 
 ### Delete, yank, and change
 
 ```text
 dr15j18j  delete the range from 15 lines below through 18 lines below
 yr5k10k   yank the range from 5 lines above through 10 lines above
+yr5k0     yank the range from 5 lines above through the current line
 cr5k8j    change the range from 5 lines above through 8 lines below
 ```
 
@@ -89,20 +91,25 @@ dr15jj    delete the line 15 lines below
 yr15kk    yank the line 15 lines above
 ```
 
+Because range order does not matter, put the remote endpoint first when using the current line as the other endpoint. Do not add `j` or `k` after `0`.
+
 ### Move
 
 Move syntax includes a source range and a destination. The moved lines are inserted before the destination line.
 
 ```text
 mr2j3j13j   move 2j..3j before the line 13j from the cursor
+mr5k02j     move 5k..current line before the line 2j from the cursor
 ```
 
-Move-to-here shorthand uses a final repeated direction instead of an explicit destination count:
+Use `0` as the destination to move a remote line or range to the current cursor line:
 
 ```text
-mr13kkk     move the line 13k to the current cursor line
-mr5k8jj     move 5k..8j to the current cursor line
+mr13kk0     move the line 13k to the current cursor line
+mr5k8j0     move 5k..8j to the current cursor line
 ```
+
+Move-to-here shorthand with a final repeated direction is also supported: `mr13kkk` and `mr5k8jj`.
 
 Moving into the selected source range is rejected and does not mutate the buffer.
 
@@ -118,6 +125,9 @@ require("relops").setup({
     yank = "yr",
     change = "cr",
     move = "mr",
+  },
+  syntax = {
+    current_line = "0",
   },
   yank_highlight = {
     enabled = true,
@@ -135,6 +145,18 @@ require("relops").setup({
     wrap = false,
   },
   notifications = true,
+})
+```
+
+### Current-line token
+
+The default current-line token is `0`. It can be changed to another single non-conflicting character:
+
+```lua
+require("relops").setup({
+  syntax = {
+    current_line = ".",
+  },
 })
 ```
 

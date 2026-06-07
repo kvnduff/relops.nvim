@@ -8,6 +8,9 @@ local default_config = {
     change = "cr",
     move = "mr",
   },
+  syntax = {
+    current_line = "0",
+  },
   yank_highlight = {
     enabled = true,
     group = "IncSearch",
@@ -90,6 +93,22 @@ local function relops_dir_to_mult(dir)
   end
 
   return nil
+end
+
+local function relops_pattern_escape(value)
+  return (value:gsub("([^%w])", "%%%1"))
+end
+
+local function relops_count_pattern(capture)
+  if capture then
+    return "([1-9]%d*)"
+  end
+
+  return "[1-9]%d*"
+end
+
+local function relops_current_line_pattern()
+  return relops_pattern_escape(config.syntax.current_line)
 end
 
 local function relops_relative_lnum(cur_lnum, n, dir)
@@ -278,6 +297,9 @@ end
 
 local function relops_read_range()
   local chars = ""
+  local count = relops_count_pattern(true)
+  local count_prefix = relops_count_pattern(false)
+  local current = relops_current_line_pattern()
 
   while true do
     local ch = vim.fn.getcharstr()
@@ -288,22 +310,28 @@ local function relops_read_range()
 
     chars = chars .. ch
 
-    local first, dir1, second, dir2 = chars:match("^(%d+)([jk])(%d+)([jk])$")
+    local first, dir1, second, dir2 = chars:match("^" .. count .. "([jk])" .. count .. "([jk])$")
 
     if first and dir1 and second and dir2 then
       return tonumber(first), dir1, tonumber(second), dir2
     end
 
-    local single, d1, d2 = chars:match("^(%d+)([jk])([jk])$")
+    local current_first, current_dir = chars:match("^" .. count .. "([jk])" .. current .. "$")
+
+    if current_first and current_dir then
+      return tonumber(current_first), current_dir, 0, "j"
+    end
+
+    local single, d1, d2 = chars:match("^" .. count .. "([jk])([jk])$")
 
     if single and d1 and d2 and d1 == d2 then
       return tonumber(single), d1, tonumber(single), d2
     end
 
     if
-      not chars:match("^%d*$")
-      and not chars:match("^%d+[jk]$")
-      and not chars:match("^%d+[jk]%d*$")
+      not chars:match("^" .. count_prefix .. "$")
+      and not chars:match("^" .. count_prefix .. "[jk]$")
+      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "$")
     then
       notify("Invalid range: " .. chars, vim.log.levels.ERROR)
       return nil
@@ -318,6 +346,9 @@ end
 
 local function relops_read_move()
   local chars = ""
+  local count = relops_count_pattern(true)
+  local count_prefix = relops_count_pattern(false)
+  local current = relops_current_line_pattern()
 
   while true do
     local ch = vim.fn.getcharstr()
@@ -328,7 +359,8 @@ local function relops_read_move()
 
     chars = chars .. ch
 
-    local a, d1, b, d2, c, d3 = chars:match("^(%d+)([jk])(%d+)([jk])(%d+)([jk])$")
+    local a, d1, b, d2, c, d3 =
+      chars:match("^" .. count .. "([jk])" .. count .. "([jk])" .. count .. "([jk])$")
 
     if a and d1 and b and d2 and c and d3 then
       return {
@@ -342,7 +374,8 @@ local function relops_read_move()
       }
     end
 
-    local s, sd1, sd2, destn, destd = chars:match("^(%d+)([jk])([jk])(%d+)([jk])$")
+    local s, sd1, sd2, destn, destd =
+      chars:match("^" .. count .. "([jk])([jk])" .. count .. "([jk])$")
 
     if s and sd1 and sd2 and destn and destd and sd1 == sd2 then
       return {
@@ -356,7 +389,45 @@ local function relops_read_move()
       }
     end
 
-    local ha, hd1, hb, hd2, hd3 = chars:match("^(%d+)([jk])(%d+)([jk])([jk])$")
+    local ca, cd1, cb, cd2 = chars:match("^" .. count .. "([jk])" .. count .. "([jk])" .. current .. "$")
+
+    if ca and cd1 and cb and cd2 then
+      return {
+        source_n1 = tonumber(ca),
+        source_dir1 = cd1,
+        source_n2 = tonumber(cb),
+        source_dir2 = cd2,
+        dest_here = true,
+      }
+    end
+
+    local cs, csd1, csd2 = chars:match("^" .. count .. "([jk])([jk])" .. current .. "$")
+
+    if cs and csd1 and csd2 and csd1 == csd2 then
+      return {
+        source_n1 = tonumber(cs),
+        source_dir1 = csd1,
+        source_n2 = tonumber(cs),
+        source_dir2 = csd2,
+        dest_here = true,
+      }
+    end
+
+    local ra, rd1, rdestn, rdestd = chars:match("^" .. count .. "([jk])" .. current .. count .. "([jk])$")
+
+    if ra and rd1 and rdestn and rdestd then
+      return {
+        source_n1 = tonumber(ra),
+        source_dir1 = rd1,
+        source_n2 = 0,
+        source_dir2 = "j",
+        dest_n = tonumber(rdestn),
+        dest_dir = rdestd,
+        dest_here = false,
+      }
+    end
+
+    local ha, hd1, hb, hd2, hd3 = chars:match("^" .. count .. "([jk])" .. count .. "([jk])([jk])$")
 
     if ha and hd1 and hb and hd2 and hd3 and hd2 == hd3 then
       return {
@@ -368,7 +439,7 @@ local function relops_read_move()
       }
     end
 
-    local hs, hsd1, hsd2, hsd3 = chars:match("^(%d+)([jk])([jk])([jk])$")
+    local hs, hsd1, hsd2, hsd3 = chars:match("^" .. count .. "([jk])([jk])([jk])$")
 
     if hs and hsd1 and hsd2 and hsd3 and hsd1 == hsd2 and hsd2 == hsd3 then
       return {
@@ -381,13 +452,15 @@ local function relops_read_move()
     end
 
     if
-      not chars:match("^%d*$")
-      and not chars:match("^%d+[jk]$")
-      and not chars:match("^%d+[jk]%d*$")
-      and not chars:match("^%d+[jk][jk]$")
-      and not chars:match("^%d+[jk][jk]%d*$")
-      and not chars:match("^%d+[jk]%d+[jk]$")
-      and not chars:match("^%d+[jk]%d+[jk]%d*$")
+      not chars:match("^" .. count_prefix .. "$")
+      and not chars:match("^" .. count_prefix .. "[jk]$")
+      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "$")
+      and not chars:match("^" .. count_prefix .. "[jk][jk]$")
+      and not chars:match("^" .. count_prefix .. "[jk][jk]" .. count_prefix .. "$")
+      and not chars:match("^" .. count_prefix .. "[jk]" .. current .. "$")
+      and not chars:match("^" .. count_prefix .. "[jk]" .. current .. count_prefix .. "$")
+      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "[jk]$")
+      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "[jk]" .. count_prefix .. "$")
     then
       notify("Invalid move: " .. chars, vim.log.levels.ERROR)
       return nil
@@ -683,6 +756,26 @@ local function expect_mapping(path, value)
   end
 end
 
+local function expect_current_line_token(path, value)
+  if value == nil then
+    return
+  end
+
+  expect_string(path, value)
+
+  if #value ~= 1 then
+    error("relops.setup(): " .. path .. " must be a single character", 3)
+  end
+
+  if value == "j" or value == "k" then
+    error("relops.setup(): " .. path .. " cannot be j or k", 3)
+  end
+
+  if value:match("^%d$") and value ~= "0" then
+    error("relops.setup(): " .. path .. " can only use 0 among digit characters", 3)
+  end
+end
+
 local function validate_opts(opts)
   if opts == nil then
     return
@@ -694,6 +787,7 @@ local function validate_opts(opts)
 
   expect_boolean("default_mappings", opts.default_mappings)
   expect_table("mappings", opts.mappings)
+  expect_table("syntax", opts.syntax)
   expect_table("yank_highlight", opts.yank_highlight)
   expect_table("clipboard", opts.clipboard)
   expect_table("undo", opts.undo)
@@ -705,6 +799,10 @@ local function validate_opts(opts)
     expect_mapping("mappings.yank", opts.mappings.yank)
     expect_mapping("mappings.change", opts.mappings.change)
     expect_mapping("mappings.move", opts.mappings.move)
+  end
+
+  if opts.syntax then
+    expect_current_line_token("syntax.current_line", opts.syntax.current_line)
   end
 
   if opts.yank_highlight then

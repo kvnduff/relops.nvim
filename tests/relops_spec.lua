@@ -146,6 +146,34 @@ test("yank supports mixed above and below ranges", function()
   eq(register_lines("0"), { "L8", "L9", "L10", "L11", "L12", "L13" }, "yank register should receive yanked lines")
 end)
 
+test("range current-line token can be the second endpoint", function()
+  reset(20, { 10, 0 })
+
+  feed("yr2k0")
+
+  eq(buffer_lines(), lines(20), "yank to current line should not mutate buffer")
+  eq(register_lines('"'), { "L8", "L9", "L10" }, "default current-line token should target the cursor line")
+  eq(register_lines("0"), { "L8", "L9", "L10" }, "yank register should receive range through cursor")
+end)
+
+test("range current-line token is configurable", function()
+  reset(20, { 10, 0 }, { syntax = { current_line = "." } })
+
+  feed("yr2k.")
+
+  eq(register_lines('"'), { "L8", "L9", "L10" }, "custom current-line token should target the cursor line")
+  eq(register_lines("0"), { "L8", "L9", "L10" }, "yank register should receive custom-token range")
+end)
+
+test("range parser does not treat zero inside a larger count as current line", function()
+  reset(20, { 10, 0 })
+
+  feed("yr2k10j")
+
+  eq(register_lines('"'), range_lines(8, 20), "10j should remain a normal remote relative target")
+  eq(register_lines("0"), range_lines(8, 20), "yank register should receive the full multi-digit range")
+end)
+
 test("single-line shorthand works for ranges", function()
   reset(20, { 10, 0 })
 
@@ -187,6 +215,30 @@ test("move-to-here shorthand moves a single remote line to the cursor", function
     buffer_lines(),
     concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), range_lines(14, 15)),
     "move-to-here shorthand should insert before the cursor line"
+  )
+end)
+
+test("move accepts current-line token as destination", function()
+  reset(15, { 10, 0 })
+
+  feed("mr3kk0")
+
+  eq(
+    buffer_lines(),
+    concat(range_lines(1, 6), range_lines(8, 9), { "L7" }, range_lines(10, 15)),
+    "current-line destination token should insert before the cursor line"
+  )
+end)
+
+test("move accepts current-line token as the second source endpoint", function()
+  reset(15, { 10, 0 })
+
+  feed("mr3k02j")
+
+  eq(
+    buffer_lines(),
+    concat(range_lines(1, 6), { "L11" }, range_lines(7, 10), range_lines(12, 15)),
+    "source range should support distant target through the cursor line"
   )
 end)
 
@@ -288,6 +340,13 @@ test("setup validates obvious bad config types", function()
 
   ok(not success, "bad setup type should fail")
   ok(tostring(err):find("undo.wrap", 1, true), "validation error should name the bad key")
+
+  success, err = pcall(function()
+    relops.setup({ syntax = { current_line = "j" } })
+  end)
+
+  ok(not success, "bad current-line token should fail")
+  ok(tostring(err):find("syntax.current_line", 1, true), "validation error should name the bad token")
 end)
 
 local failures = {}

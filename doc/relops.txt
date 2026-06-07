@@ -42,6 +42,7 @@ Delete, yank, and change read two relative targets: >text
 
   dr15j18j   delete 15j through 18j
   yr5k10k    yank 5k through 10k
+  yr5k0      yank 5k through the current cursor line
   cr5k8j     change 5k through 8j
 <
 
@@ -51,18 +52,26 @@ Single-line shorthand repeats the same target when both directions match: >text
   yr15kk     yank the line 15k
 <
 
+Use 0 for the current cursor line when it is the second endpoint of a range.
+Because range order does not matter, put the remote endpoint first. Do not add
+j or k after 0.
+
 Move reads a source range and a destination. Lines are inserted before the
 destination line: >text
 
   mr2j3j13j  move 2j..3j before 13j
+  mr5k02j    move 5k..current line before 2j
 <
 
-Move-to-here shorthand uses a final repeated direction instead of a destination
-count: >text
+Use 0 as the destination to move a remote line or range to the current cursor
+line: >text
 
-  mr13kkk    move 13k to the current cursor line
-  mr5k8jj    move 5k..8j to the current cursor line
+  mr13kk0    move 13k to the current cursor line
+  mr5k8j0    move 5k..8j to the current cursor line
 <
+
+Move-to-here shorthand with a final repeated direction is also supported:
+mr13kkk and mr5k8jj.
 
 ==============================================================================
 CONFIG                                                         *relops-config*
@@ -76,6 +85,9 @@ Defaults: >lua
       yank = "yr",
       change = "cr",
       move = "mr",
+    },
+    syntax = {
+      current_line = "0",
     },
     yank_highlight = {
       enabled = true,
@@ -98,6 +110,14 @@ Defaults: >lua
 
 Set any mapping to false or an empty string to skip it. Set
 `mappings.enabled = false` to skip all operation mappings.
+
+The default current-line token is 0. It can be changed to another single
+non-conflicting character: >lua
+
+  require("relops").setup({
+    syntax = { current_line = "." },
+  })
+<
 
 Undo wrapping is opt-in because mapping `u` and `<C-r>` can surprise users: >lua
 
