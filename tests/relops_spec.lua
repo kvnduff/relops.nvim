@@ -194,14 +194,94 @@ test("single remote line syntax yanks one line", function()
   eq(register_lines("0"), { "L7" }, "yank register should receive one line")
 end)
 
-test("change deletes the remote range and returns after insert abort", function()
-  reset(15, { 8, 0 })
+test("change replaces a single remote line with insert text", function()
+  reset(10, { 1, 0 })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+    "",
+    "text2",
+    "text3",
+    "",
+    "",
+    "text6",
+    "text7",
+    "text8",
+    "",
+    "",
+  })
 
-  feed("crr2j3j<Esc>")
+  feed("cr4jhello<Esc>")
 
-  eq(buffer_lines(), without_range(15, 10, 11), "change should remove the selected range")
-  eq(vim.api.nvim_win_get_cursor(0), { 8, 0 }, "change should restore the original cursor after InsertLeave")
+  eq(buffer_lines(), {
+    "",
+    "text2",
+    "text3",
+    "",
+    "hello",
+    "text6",
+    "text7",
+    "text8",
+    "",
+    "",
+  }, "change should replace the target line without consuming the following line")
+  eq(vim.api.nvim_win_get_cursor(0), { 1, 0 }, "change should restore the original cursor after InsertLeave")
   eq(vim.api.nvim_get_mode().mode, "n", "change should finish in normal mode after escape")
+end)
+
+test("change replaces a remote range with insert text", function()
+  reset(10, { 1, 0 })
+
+  feed("crr4j6jhello<Esc>")
+
+  eq(
+    buffer_lines(),
+    concat(range_lines(1, 4), { "hello" }, range_lines(8, 10)),
+    "change should replace the selected range with one inserted line"
+  )
+  eq(vim.api.nvim_win_get_cursor(0), { 1, 0 }, "change should restore the original cursor after InsertLeave")
+  eq(register_lines("1"), { "L5", "L6", "L7" }, "change should set delete-like register")
+end)
+
+test("change range accepts multiline insert replacement", function()
+  reset(10, { 1, 0 })
+
+  feed("crr4j6jalpha<CR>beta<Esc>")
+
+  eq(
+    buffer_lines(),
+    concat(range_lines(1, 4), { "alpha", "beta" }, range_lines(8, 10)),
+    "change should let insert mode decide replacement line count"
+  )
+  eq(vim.api.nvim_win_get_cursor(0), { 1, 0 }, "change should restore the original cursor after InsertLeave")
+end)
+
+test("change single-line replacement is one native undo step", function()
+  reset(10, { 1, 0 })
+
+  feed("cr5jhello<Esc>")
+  eq(
+    buffer_lines(),
+    concat(range_lines(1, 5), { "hello" }, range_lines(7, 10)),
+    "change should replace the remote line before undo"
+  )
+
+  feed("u")
+
+  eq(buffer_lines(), lines(10), "one undo should restore the original remote line")
+end)
+
+test("change range replacement is one native undo step", function()
+  reset(10, { 1, 0 })
+
+  feed("crr4j6jhello<Esc>")
+  eq(
+    buffer_lines(),
+    concat(range_lines(1, 4), { "hello" }, range_lines(8, 10)),
+    "change should replace the remote range before undo"
+  )
+
+  feed("u")
+
+  eq(buffer_lines(), lines(10), "one undo should restore the original remote range")
 end)
 
 test("single move relocates a line to the adjusted destination anchor", function()

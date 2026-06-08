@@ -95,6 +95,11 @@ yrr5k0     yank the range from 5 lines above through the current line
 crr5k8j    change the range from 5 lines above through 8 lines below
 ```
 
+Change is linewise: the target line or range is replaced by one empty insert
+line. Type one line to replace the whole range with one line, or press Return in
+insert mode to create multiple replacement lines. The linewise replacement and
+inserted text undo as one change.
+
 Because range order does not matter, put the remote endpoint first when using the current line
 as the other endpoint.
 Do not add `j` or `k` after `0`.

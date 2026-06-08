@@ -71,6 +71,11 @@ Repeat the r for a remote range: >text
   crr5k8j    change 5k through 8j
 <
 
+Change is linewise: the target line or range is replaced by one empty insert
+line. Type one line to replace the whole range with one line, or press Return
+in Insert mode to create multiple replacement lines. The linewise replacement
+and inserted text undo as one change.
+
 Use 0 for the current cursor line when it is the second endpoint of a range.
 Because range order does not matter, put the remote endpoint first. Do not add
 j or k after 0.

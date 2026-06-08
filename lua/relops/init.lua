@@ -589,7 +589,7 @@ local function relops_change()
     redo_col = cur_col,
   })
 
-  vim.api.nvim_buf_set_lines(bufnr, range.start_lnum - 1, range.end_lnum, false, {})
+  vim.api.nvim_buf_set_lines(bufnr, range.start_lnum - 1, range.end_lnum, false, { "" })
 
   local last = relops_buf_line_count(bufnr)
   local insert_lnum = math.min(range.start_lnum, last)
@@ -599,6 +599,17 @@ local function relops_change()
 
   local group = vim.api.nvim_create_augroup("RelopsChangeOnce", { clear = false })
   local autocmd_id
+  local insert_char_autocmd_id
+
+  insert_char_autocmd_id = vim.api.nvim_create_autocmd("InsertCharPre", {
+    group = group,
+    buffer = bufnr,
+    once = true,
+    callback = function()
+      pcall(vim.api.nvim_del_autocmd, insert_char_autocmd_id)
+      pcall(vim.cmd, "silent! undojoin")
+    end,
+  })
 
   autocmd_id = vim.api.nvim_create_autocmd("InsertLeave", {
     group = group,
@@ -606,6 +617,7 @@ local function relops_change()
     once = true,
     callback = function()
       pcall(vim.api.nvim_del_autocmd, autocmd_id)
+      pcall(vim.api.nvim_del_autocmd, insert_char_autocmd_id)
 
       vim.b.relops_restore_on_next_undo = true
       vim.b.relops_restore_on_next_redo = false
