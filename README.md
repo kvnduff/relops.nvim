@@ -2,7 +2,11 @@
 
 Remote relative line operations for Neovim.
 
-`relops.nvim` lets you act on lines away from the cursor without jumping to them first. It is useful when relative numbers show the target lines clearly and you want to delete, yank, change, or move those lines while keeping your cursor anchored.
+Current release target: `v0.3.0`.
+
+`relops.nvim` lets you act on lines away from the cursor without jumping to them first.
+It is useful when relative numbers show the target lines clearly and you want to delete, yank,
+change, or move those lines while keeping your cursor anchored.
 
 ## Requirements
 
@@ -67,51 +71,74 @@ The default mappings are:
 
 | Mapping | Operation |
 | --- | --- |
-| `dr` | Delete a remote relative line range |
-| `yr` | Yank a remote relative line range |
-| `cr` | Change a remote relative line range |
-| `mr` | Move a remote relative line range |
+| `dr` | Delete a remote relative line or range |
+| `yr` | Yank a remote relative line or range |
+| `cr` | Change a remote relative line or range |
+| `mr` | Move a remote relative line or range |
 
-After the operation mapping, type a compact range expression using relative line counts and `j` or `k` directions.
-Use `0` for the current cursor line when the current line is the second endpoint of a range or a move destination.
+After the operation mapping, type a compact expression using relative line counts and `j` or `k` directions.
+
+In v0.3.0, the syntax changed to make the command intent clearer:
+
+```text
+r   remote line
+rr  remote range
+```
+
+For the default mappings, `dr5j` deletes one remote line and `drr2j5j` deletes a remote range.
+The old v0.1 repeated-direction forms such as `dr15jj`, `yr15kk`, `mr13kk0`, and
+`mr2j3j13j` are no longer the documented command syntax.
+Update macros, notes, and muscle memory to the v0.3.0 forms.
+
+Use `0` for the current cursor line when the current line is the second endpoint of a range,
+a move destination, or the second source endpoint of a range move.
 
 ### Delete, yank, and change
 
 ```text
-dr15j18j  delete the range from 15 lines below through 18 lines below
-yr5k10k   yank the range from 5 lines above through 10 lines above
-yr5k0     yank the range from 5 lines above through the current line
-cr5k8j    change the range from 5 lines above through 8 lines below
+dr15j     delete the single remote line 15 below
+yr5k      yank the single remote line 5 above
+cr8j      change the single remote line 8 below
 ```
 
-Single-line shorthand repeats the same target when both directions match:
+Repeat the `r` for a remote range:
 
 ```text
-dr15jj    delete the line 15 lines below
-yr15kk    yank the line 15 lines above
+drr15j18j  delete the range from 15 lines below through 18 lines below
+yrr5k10k   yank the range from 5 lines above through 10 lines above
+yrr5k0     yank the range from 5 lines above through the current line
+crr5k8j    change the range from 5 lines above through 8 lines below
 ```
 
-Because range order does not matter, put the remote endpoint first when using the current line as the other endpoint. Do not add `j` or `k` after `0`.
+Because range order does not matter, put the remote endpoint first when using the current line
+as the other endpoint.
+Do not add `j` or `k` after `0`.
 
 ### Move
 
-Move syntax includes a source range and a destination. The moved lines are inserted before the destination line.
+Move syntax includes a source and a destination.
+Move works on line contents rather than cutting lines out of the buffer.
+It captures the source contents, clears the source lines, inserts the captured contents at the
+visible destination coordinate, and shifts existing destination/downstream contents down.
+The buffer grows as needed to preserve shifted contents, and overlapping source/destination ranges are allowed.
+Registers receive the original moved contents.
 
 ```text
-mr2j3j13j   move 2j..3j before the line 13j from the cursor
-mr5k02j     move 5k..current line before the line 2j from the cursor
+mr5j9j      move the single remote line 5 below to the line 9 below
+mr5j0       move the single remote line 5 below to the current cursor line
 ```
 
-Use `0` as the destination to move a remote line or range to the current cursor line:
+Repeat the `r` for a remote source range:
 
 ```text
-mr13kk0     move the line 13k to the current cursor line
-mr5k8j0     move 5k..8j to the current cursor line
+mrr2j5j9j   move 2j..5j so the range starts at the line 9j from the cursor
+mrr2j5j0    move 2j..5j to the current cursor line
+mrr5j09k    move 5j..current line so the range starts at the line 9k from the cursor
 ```
 
-Move-to-here shorthand with a final repeated direction is also supported: `mr13kkk` and `mr5k8jj`.
-
-Moving into the selected source range is rejected and does not mutate the buffer.
+For example, if `3j` and `4j` contain text and `10j` and `11j` already contain text,
+`mrr3j4j9j` clears `3j..4j`, writes the moved text at `9j..10j`, and shifts the old
+`9j` and later contents down by two lines.
 
 ## Configuration
 
@@ -186,11 +213,13 @@ relops.change()
 relops.move()
 relops.undo()
 relops.redo()
+relops.version
 ```
 
 ## Known tradeoffs
 
-- Input after `dr`, `yr`, `cr`, or `mr` is read with `getcharstr()`, so native `showcmd` does not display the in-progress command.
+- Input after `dr`, `yr`, `cr`, or `mr` is read with `getcharstr()`, so native `showcmd`
+  does not display the in-progress command.
 - The command parser intentionally accepts only the compact relative-line grammar documented above.
 - Clipboard writes to `+` and `*` are attempted when enabled, but ignored safely when those registers are unavailable.
 - Undo and redo wrapping is optional because overriding `u` and `<C-r>` is invasive.

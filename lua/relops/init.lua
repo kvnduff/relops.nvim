@@ -34,10 +34,10 @@ local state_ns = vim.api.nvim_create_namespace("relops_state")
 local flash_ns = vim.api.nvim_create_namespace("relops_flash")
 
 local mapping_descriptions = {
-  delete = "Relops: delete remote relative range",
-  yank = "Relops: yank remote relative range",
-  change = "Relops: change remote relative range",
-  move = "Relops: move remote relative range",
+  delete = "Relops: delete remote relative line or range",
+  yank = "Relops: yank remote relative line or range",
+  change = "Relops: change remote relative line or range",
+  move = "Relops: move remote relative line or range",
   undo = "Relops: undo, preserving remote-relative position when needed",
   redo = "Relops: redo, preserving remote-relative position when needed",
 }
@@ -310,28 +310,30 @@ local function relops_read_range()
 
     chars = chars .. ch
 
-    local first, dir1, second, dir2 = chars:match("^" .. count .. "([jk])" .. count .. "([jk])$")
+    local single, single_dir = chars:match("^" .. count .. "([jk])$")
+
+    if single and single_dir then
+      return tonumber(single), single_dir, tonumber(single), single_dir
+    end
+
+    local first, dir1, second, dir2 = chars:match("^r" .. count .. "([jk])" .. count .. "([jk])$")
 
     if first and dir1 and second and dir2 then
       return tonumber(first), dir1, tonumber(second), dir2
     end
 
-    local current_first, current_dir = chars:match("^" .. count .. "([jk])" .. current .. "$")
+    local current_first, current_dir = chars:match("^r" .. count .. "([jk])" .. current .. "$")
 
     if current_first and current_dir then
       return tonumber(current_first), current_dir, 0, "j"
     end
 
-    local single, d1, d2 = chars:match("^" .. count .. "([jk])([jk])$")
-
-    if single and d1 and d2 and d1 == d2 then
-      return tonumber(single), d1, tonumber(single), d2
-    end
-
     if
       not chars:match("^" .. count_prefix .. "$")
-      and not chars:match("^" .. count_prefix .. "[jk]$")
-      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "$")
+      and chars ~= "r"
+      and not chars:match("^r" .. count_prefix .. "$")
+      and not chars:match("^r" .. count_prefix .. "[jk]$")
+      and not chars:match("^r" .. count_prefix .. "[jk]" .. count_prefix .. "$")
     then
       notify("Invalid range: " .. chars, vim.log.levels.ERROR)
       return nil
@@ -359,8 +361,36 @@ local function relops_read_move()
 
     chars = chars .. ch
 
+    local source, source_dir, dest, dest_dir =
+      chars:match("^" .. count .. "([jk])" .. count .. "([jk])$")
+
+    if source and source_dir and dest and dest_dir then
+      return {
+        source_n1 = tonumber(source),
+        source_dir1 = source_dir,
+        source_n2 = tonumber(source),
+        source_dir2 = source_dir,
+        dest_n = tonumber(dest),
+        dest_dir = dest_dir,
+        dest_here = false,
+      }
+    end
+
+    local current_source, current_source_dir =
+      chars:match("^" .. count .. "([jk])" .. current .. "$")
+
+    if current_source and current_source_dir then
+      return {
+        source_n1 = tonumber(current_source),
+        source_dir1 = current_source_dir,
+        source_n2 = tonumber(current_source),
+        source_dir2 = current_source_dir,
+        dest_here = true,
+      }
+    end
+
     local a, d1, b, d2, c, d3 =
-      chars:match("^" .. count .. "([jk])" .. count .. "([jk])" .. count .. "([jk])$")
+      chars:match("^r" .. count .. "([jk])" .. count .. "([jk])" .. count .. "([jk])$")
 
     if a and d1 and b and d2 and c and d3 then
       return {
@@ -374,22 +404,8 @@ local function relops_read_move()
       }
     end
 
-    local s, sd1, sd2, destn, destd =
-      chars:match("^" .. count .. "([jk])([jk])" .. count .. "([jk])$")
-
-    if s and sd1 and sd2 and destn and destd and sd1 == sd2 then
-      return {
-        source_n1 = tonumber(s),
-        source_dir1 = sd1,
-        source_n2 = tonumber(s),
-        source_dir2 = sd2,
-        dest_n = tonumber(destn),
-        dest_dir = destd,
-        dest_here = false,
-      }
-    end
-
-    local ca, cd1, cb, cd2 = chars:match("^" .. count .. "([jk])" .. count .. "([jk])" .. current .. "$")
+    local ca, cd1, cb, cd2 =
+      chars:match("^r" .. count .. "([jk])" .. count .. "([jk])" .. current .. "$")
 
     if ca and cd1 and cb and cd2 then
       return {
@@ -401,19 +417,8 @@ local function relops_read_move()
       }
     end
 
-    local cs, csd1, csd2 = chars:match("^" .. count .. "([jk])([jk])" .. current .. "$")
-
-    if cs and csd1 and csd2 and csd1 == csd2 then
-      return {
-        source_n1 = tonumber(cs),
-        source_dir1 = csd1,
-        source_n2 = tonumber(cs),
-        source_dir2 = csd2,
-        dest_here = true,
-      }
-    end
-
-    local ra, rd1, rdestn, rdestd = chars:match("^" .. count .. "([jk])" .. current .. count .. "([jk])$")
+    local ra, rd1, rdestn, rdestd =
+      chars:match("^r" .. count .. "([jk])" .. current .. count .. "([jk])$")
 
     if ra and rd1 and rdestn and rdestd then
       return {
@@ -427,40 +432,20 @@ local function relops_read_move()
       }
     end
 
-    local ha, hd1, hb, hd2, hd3 = chars:match("^" .. count .. "([jk])" .. count .. "([jk])([jk])$")
-
-    if ha and hd1 and hb and hd2 and hd3 and hd2 == hd3 then
-      return {
-        source_n1 = tonumber(ha),
-        source_dir1 = hd1,
-        source_n2 = tonumber(hb),
-        source_dir2 = hd2,
-        dest_here = true,
-      }
-    end
-
-    local hs, hsd1, hsd2, hsd3 = chars:match("^" .. count .. "([jk])([jk])([jk])$")
-
-    if hs and hsd1 and hsd2 and hsd3 and hsd1 == hsd2 and hsd2 == hsd3 then
-      return {
-        source_n1 = tonumber(hs),
-        source_dir1 = hsd1,
-        source_n2 = tonumber(hs),
-        source_dir2 = hsd2,
-        dest_here = true,
-      }
-    end
-
     if
       not chars:match("^" .. count_prefix .. "$")
       and not chars:match("^" .. count_prefix .. "[jk]$")
       and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "$")
-      and not chars:match("^" .. count_prefix .. "[jk][jk]$")
-      and not chars:match("^" .. count_prefix .. "[jk][jk]" .. count_prefix .. "$")
-      and not chars:match("^" .. count_prefix .. "[jk]" .. current .. "$")
-      and not chars:match("^" .. count_prefix .. "[jk]" .. current .. count_prefix .. "$")
-      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "[jk]$")
-      and not chars:match("^" .. count_prefix .. "[jk]" .. count_prefix .. "[jk]" .. count_prefix .. "$")
+      and chars ~= "r"
+      and not chars:match("^r" .. count_prefix .. "$")
+      and not chars:match("^r" .. count_prefix .. "[jk]$")
+      and not chars:match("^r" .. count_prefix .. "[jk]" .. count_prefix .. "$")
+      and not chars:match("^r" .. count_prefix .. "[jk]" .. count_prefix .. "[jk]$")
+      and not chars:match(
+        "^r" .. count_prefix .. "[jk]" .. count_prefix .. "[jk]" .. count_prefix .. "$"
+      )
+      and not chars:match("^r" .. count_prefix .. "[jk]" .. current .. "$")
+      and not chars:match("^r" .. count_prefix .. "[jk]" .. current .. count_prefix .. "$")
     then
       notify("Invalid move: " .. chars, vim.log.levels.ERROR)
       return nil
@@ -670,11 +655,6 @@ local function relops_move()
     return
   end
 
-  if dest_lnum >= src.start_lnum and dest_lnum <= src.end_lnum then
-    notify("Move destination cannot be inside the source range", vim.log.levels.ERROR)
-    return
-  end
-
   local lines = vim.api.nvim_buf_get_lines(bufnr, src.start_lnum - 1, src.end_lnum, false)
 
   if #lines == 0 then
@@ -684,26 +664,17 @@ local function relops_move()
   relops_set_delete_like_registers(lines)
 
   local includes_cursor = src.start_lnum <= cur_lnum and src.end_lnum >= cur_lnum
-  local insert_index = dest_lnum - 1
-
-  if src.end_lnum < dest_lnum then
-    insert_index = insert_index - #lines
-  end
-
-  insert_index = math.max(0, math.min(insert_index, relops_buf_line_count(bufnr) - #lines))
-
-  local moved_start_lnum = insert_index + 1
   local post_lnum, post_col
 
   if includes_cursor then
-    post_lnum = moved_start_lnum
+    post_lnum = dest_lnum
     post_col = 0
   else
     post_lnum, post_col = cur_lnum, cur_col
   end
 
   relops_make_state(bufnr, view, cur_lnum, cur_col, {
-    use_extmark = not includes_cursor,
+    use_extmark = false,
     post_lnum = post_lnum,
     post_col = post_col,
     undo_lnum = cur_lnum,
@@ -715,8 +686,14 @@ local function relops_move()
   vim.b.relops_restore_on_next_undo = true
   vim.b.relops_restore_on_next_redo = false
 
-  vim.api.nvim_buf_set_lines(bufnr, src.start_lnum - 1, src.end_lnum, false, {})
-  vim.api.nvim_buf_set_lines(bufnr, insert_index, insert_index, false, lines)
+  local cleared = {}
+
+  for i = 1, #lines do
+    cleared[i] = ""
+  end
+
+  vim.api.nvim_buf_set_lines(bufnr, src.start_lnum - 1, src.end_lnum, false, cleared)
+  vim.api.nvim_buf_set_lines(bufnr, dest_lnum - 1, dest_lnum - 1, false, lines)
 
   relops_restore_state("post")
   notify("Moved " .. #lines .. " remote lines")
@@ -915,5 +892,6 @@ M.move = relops_move
 M.undo = relops_undo
 M.redo = relops_redo
 M.defaults = vim.deepcopy(default_config)
+M.version = "0.3.0"
 
 return M
