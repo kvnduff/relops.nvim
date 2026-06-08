@@ -38,6 +38,10 @@ Default mappings: >text
   mr  move remote relative line or range
 <
 
+The default mappings avoid Neovim's normal mapping timeout. dr, yr, and cr
+enter relops through an operator-pending r, and mr uses an immediate m
+dispatcher that forwards non-r keys to native mark setting.
+
 ==============================================================================
 SYNTAX                                                         *relops-syntax*
 
@@ -71,12 +75,12 @@ Use 0 for the current cursor line when it is the second endpoint of a range.
 Because range order does not matter, put the remote endpoint first. Do not add
 j or k after 0.
 
-Move works on line contents rather than cutting lines out of the buffer. It
-captures the source contents, clears the source lines, inserts the captured
-contents at the visible destination coordinate, and shifts existing destination
-and downstream contents down. The buffer grows as needed to preserve shifted
-contents, overlapping source and destination ranges are allowed, and registers
-receive the original moved contents: >text
+Move relocates whole lines. It captures the source lines, deletes them so the
+gap closes, then inserts them before the destination anchor. The destination is
+evaluated against the original visible buffer; when the destination is below the
+source, it shifts upward after the source is removed. The buffer line count
+stays stable, destination contents are preserved, and destinations inside the
+source range are rejected. Registers receive the original moved contents: >text
 
   mr5j9j     move the single remote line 5j to 9j
   mr5j0      move the single remote line 5j to the current cursor line
@@ -92,8 +96,9 @@ Repeat the r for a remote source range: >text
 Use 0 as the move destination to move a remote line or range to the current
 cursor line.
 
-For example, mrr3j4j9j clears 3j..4j, writes the moved text at 9j..10j, and
-shifts the old 9j and later contents down by two lines.
+For example, mrr3j4j9j moves 3j..4j to the original 9j anchor. After the source
+is removed, original 9j shifts up by two lines, and the moved text is inserted
+before that shifted anchor.
 
 ==============================================================================
 CONFIG                                                         *relops-config*
@@ -153,6 +158,10 @@ TRADEOFFS                                                   *relops-tradeoffs*
 
 relops.nvim reads input after the operation mapping with |getcharstr()|. Native
 |showcmd| is therefore not supported for the in-progress range expression.
+
+The default mr timeout fix maps m and preserves native marks for non-r mark
+names. If you rely on other normal-mode mappings that start with m, remap move
+to a less conflicting key sequence.
 
 Clipboard writes to + and * are protected and silently ignored when unavailable.
 <Esc> and <C-c> abort cleanly without mutating the buffer.

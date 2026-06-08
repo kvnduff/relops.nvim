@@ -36,16 +36,6 @@ local function range_lines(first, last)
   return result
 end
 
-local function blank_lines(count)
-  local result = {}
-
-  for _ = 1, count do
-    table.insert(result, "")
-  end
-
-  return result
-end
-
 local function concat(...)
   local result = {}
 
@@ -214,20 +204,20 @@ test("change deletes the remote range and returns after insert abort", function(
   eq(vim.api.nvim_get_mode().mode, "n", "change should finish in normal mode after escape")
 end)
 
-test("single move clears the source and inserts content at the destination coordinate", function()
+test("single move relocates a line to the adjusted destination anchor", function()
   reset(15, { 10, 0 })
 
   feed("mr2j5j")
 
   eq(
     buffer_lines(),
-    concat(range_lines(1, 11), { "" }, range_lines(13, 14), { "L12", "L15" }),
-    "single move should clear source and shift destination content down"
+    concat(range_lines(1, 11), range_lines(13, 14), { "L12", "L15" }),
+    "single move should remove source and insert before the shifted destination"
   )
   eq(register_lines("1"), { "L12" }, "move should set delete-like register")
 end)
 
-test("single move preserves destination content by shifting it down", function()
+test("single move preserves destination content while keeping line count stable", function()
   reset(7, { 1, 0 })
 
   vim.api.nvim_buf_set_lines(0, 3, 4, false, { "L4 text" })
@@ -236,64 +226,74 @@ test("single move preserves destination content by shifting it down", function()
 
   eq(
     buffer_lines(),
-    { "L1", "L2", "L3", "", "L5", "L6", "L4 text", "L7" },
-    "single move should insert captured content at the destination coordinate"
+    { "L1", "L2", "L3", "L5", "L6", "L4 text", "L7" },
+    "single move should close the source gap and insert before the shifted destination"
   )
 end)
 
-test("range move clears the source and inserts content at the destination coordinate", function()
+test("range move relocates lines to the adjusted destination anchor", function()
   reset(30, { 10, 0 })
 
   feed("mrr2j3j13j")
 
   eq(
     buffer_lines(),
-    concat(
-      range_lines(1, 11),
-      blank_lines(2),
-      range_lines(14, 22),
-      range_lines(12, 13),
-      range_lines(23, 30)
-    ),
-    "range move should clear source and shift destination content down"
+    concat(range_lines(1, 11), range_lines(14, 22), range_lines(12, 13), range_lines(23, 30)),
+    "range move should remove source and insert before the shifted destination"
   )
   eq(register_lines("1"), { "L12", "L13" }, "range move should set delete-like register")
 end)
 
-test("range move preserves destination content by shifting it down", function()
+test("default move dispatcher preserves normal mark setting for other mark names", function()
+  reset(10, { 4, 0 })
+
+  feed("ma")
+
+  local pos = vim.fn.getpos("'a")
+  eq({ pos[2], pos[3] - 1 }, { 4, 0 }, "ma should still set mark a at the cursor")
+  eq(buffer_lines(), lines(10), "setting a mark should not mutate the buffer")
+end)
+
+test("default mappings avoid timeout-sensitive normal-mode prefixes", function()
+  reset(10, { 4, 0 })
+
+  eq(vim.fn.maparg("dr", "n"), "", "delete should not depend on a normal-mode dr mapping")
+  eq(vim.fn.maparg("yr", "n"), "", "yank should not depend on a normal-mode yr mapping")
+  eq(vim.fn.maparg("cr", "n"), "", "change should not depend on a normal-mode cr mapping")
+  ok(vim.fn.maparg("r", "o") ~= "", "operator-pending r should enter relops for d/y/c")
+
+  local move_map = vim.fn.maparg("m", "n", false, true)
+  ok(type(move_map) == "table" and move_map.lhs == "m", "move should install an m dispatcher")
+  ok(move_map.nowait == 1 or move_map.nowait == true, "m dispatcher should not wait for mr")
+end)
+
+test("range move to the line after the source is a no-op relocation", function()
   reset(20, { 10, 0 })
 
   feed("mrr2j5j6j")
 
-  eq(
-    buffer_lines(),
-    concat(range_lines(1, 11), blank_lines(4), range_lines(12, 20)),
-    "range move should insert captured content and shift destination content down"
-  )
+  eq(buffer_lines(), lines(20), "destination immediately after source should preserve line order")
 end)
 
-test("range move extends the buffer to preserve shifted destination content", function()
+test("range move preserves destination content below the source", function()
   reset(7, { 1, 0 })
 
   feed("mrr3j4j6j")
 
   eq(
     buffer_lines(),
-    concat(range_lines(1, 3), blank_lines(2), { "L6", "L4", "L5", "L7" }),
-    "range move should grow the buffer instead of dropping shifted content"
+    concat(range_lines(1, 3), { "L6", "L4", "L5", "L7" }),
+    "range move should keep the original destination content after the moved block"
   )
 end)
 
-test("range move allows destination overlap with the source range", function()
-  reset(15, { 5, 0 })
+test("range move rejects destinations inside the source range", function()
+  reset(15, { 5, 0 }, { notifications = true })
 
   feed("mrr2j4j3j")
 
-  eq(
-    buffer_lines(),
-    concat(range_lines(1, 6), { "", "L7", "L8", "L9", "", "" }, range_lines(10, 15)),
-    "overlapping range move should capture source before clearing and inserting"
-  )
+  eq(buffer_lines(), lines(15), "move into source range should not mutate")
+  ok(has_notification("Move destination cannot be inside the source range"), "overlap should notify")
 end)
 
 test("move-to-current moves a single remote line to the cursor", function()
@@ -303,7 +303,7 @@ test("move-to-current moves a single remote line to the cursor", function()
 
   eq(
     buffer_lines(),
-    concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), { "" }, range_lines(14, 15)),
+    concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), range_lines(14, 15)),
     "move-to-current should insert before the cursor line"
   )
 end)
@@ -315,8 +315,8 @@ test("move accepts current-line token as a destination coordinate", function()
 
   eq(
     buffer_lines(),
-    concat(range_lines(1, 6), { "" }, range_lines(8, 9), { "L7" }, range_lines(10, 15)),
-    "current-line destination token should land at the original cursor coordinate"
+    concat(range_lines(1, 6), range_lines(8, 9), { "L7" }, range_lines(10, 15)),
+    "current-line destination token should land at the shifted cursor coordinate"
   )
 end)
 
@@ -327,7 +327,7 @@ test("move accepts current-line token as the second source endpoint", function()
 
   eq(
     buffer_lines(),
-    concat(range_lines(1, 6), blank_lines(4), { "L11" }, range_lines(7, 10), range_lines(12, 15)),
+    concat(range_lines(1, 6), { "L11" }, range_lines(7, 10), range_lines(12, 15)),
     "source range should support distant target through the cursor line"
   )
 end)
@@ -339,22 +339,9 @@ test("move accepts source range through current line with a remote destination",
 
   eq(
     buffer_lines(),
-    concat(range_lines(10, 15), range_lines(1, 9), blank_lines(6), range_lines(16, 20)),
+    concat(range_lines(10, 15), range_lines(1, 9), range_lines(16, 20)),
     "source range should support below target through the cursor line"
   )
-end)
-
-test("move overlap does not notify or mutate incorrectly", function()
-  reset(15, { 5, 0 }, { notifications = true })
-
-  feed("mrr2j4j3j")
-
-  eq(
-    buffer_lines(),
-    concat(range_lines(1, 6), { "", "L7", "L8", "L9", "", "" }, range_lines(10, 15)),
-    "move into source range should be allowed"
-  )
-  ok(not has_notification("Move destination cannot be inside the source range"), "overlapping move should not error")
 end)
 
 test("out-of-buffer ranges do not mutate buffers", function()
@@ -408,7 +395,7 @@ test("undo and redo wrappers restore move operations when enabled", function()
   feed("mr3j0")
   eq(
     buffer_lines(),
-    concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), { "" }, range_lines(14, 15)),
+    concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), range_lines(14, 15)),
     "move should mutate before undo"
   )
 
@@ -419,7 +406,7 @@ test("undo and redo wrappers restore move operations when enabled", function()
   feed("<C-r>")
   eq(
     buffer_lines(),
-    concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), { "" }, range_lines(14, 15)),
+    concat(range_lines(1, 9), { "L13" }, range_lines(10, 12), range_lines(14, 15)),
     "redo should reapply move"
   )
   eq(vim.api.nvim_win_get_cursor(0), { 10, 0 }, "redo wrapper should restore cursor after move")
@@ -428,15 +415,20 @@ end)
 test("repeated setup removes old relops mappings", function()
   reset(5, { 3, 0 })
 
+  ok(vim.fn.maparg("r", "o") ~= "", "default operator-pending mapping should exist")
+  ok(vim.fn.maparg("m", "n") ~= "", "default move dispatcher should exist")
+
   relops.setup({
     notifications = false,
     yank_highlight = { enabled = false },
     mappings = { enabled = true, delete = "zx", yank = false, change = false, move = false },
   })
   ok(vim.fn.maparg("zx", "n") ~= "", "custom mapping should exist")
+  eq(vim.fn.maparg("m", "n"), "", "default move dispatcher should be removed for custom setup")
 
   relops.setup({ mappings = { enabled = false }, notifications = false })
   eq(vim.fn.maparg("zx", "n"), "", "custom mapping should be removed on disabled setup")
+  eq(vim.fn.maparg("r", "o"), "", "operator-pending mapping should be removed on disabled setup")
 end)
 
 test("setup validates obvious bad config types", function()

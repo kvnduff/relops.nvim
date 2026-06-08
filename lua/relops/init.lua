@@ -38,11 +38,18 @@ local mapping_descriptions = {
   yank = "Relops: yank remote relative line or range",
   change = "Relops: change remote relative line or range",
   move = "Relops: move remote relative line or range",
+  operator = "Relops: delete, yank, or change remote relative line or range",
   undo = "Relops: undo, preserving remote-relative position when needed",
   redo = "Relops: redo, preserving remote-relative position when needed",
 }
 
 local active_mappings = {}
+
+local operator_mappings = {
+  delete = { lhs = "dr", operator = "d" },
+  yank = { lhs = "yr", operator = "y" },
+  change = { lhs = "cr", operator = "c" },
+}
 
 local function notify(message, level)
   if config.notifications then
@@ -655,10 +662,21 @@ local function relops_move()
     return
   end
 
+  if dest_lnum >= src.start_lnum and dest_lnum <= src.end_lnum then
+    notify("Move destination cannot be inside the source range", vim.log.levels.ERROR)
+    return
+  end
+
   local lines = vim.api.nvim_buf_get_lines(bufnr, src.start_lnum - 1, src.end_lnum, false)
 
   if #lines == 0 then
     return
+  end
+
+  local insert_lnum = dest_lnum
+
+  if dest_lnum > src.end_lnum then
+    insert_lnum = dest_lnum - #lines
   end
 
   relops_set_delete_like_registers(lines)
@@ -667,14 +685,14 @@ local function relops_move()
   local post_lnum, post_col
 
   if includes_cursor then
-    post_lnum = dest_lnum
-    post_col = 0
+    post_lnum = insert_lnum + (cur_lnum - src.start_lnum)
+    post_col = cur_col
   else
     post_lnum, post_col = cur_lnum, cur_col
   end
 
   relops_make_state(bufnr, view, cur_lnum, cur_col, {
-    use_extmark = false,
+    use_extmark = not includes_cursor,
     post_lnum = post_lnum,
     post_col = post_col,
     undo_lnum = cur_lnum,
@@ -686,17 +704,45 @@ local function relops_move()
   vim.b.relops_restore_on_next_undo = true
   vim.b.relops_restore_on_next_redo = false
 
-  local cleared = {}
-
-  for i = 1, #lines do
-    cleared[i] = ""
-  end
-
-  vim.api.nvim_buf_set_lines(bufnr, src.start_lnum - 1, src.end_lnum, false, cleared)
-  vim.api.nvim_buf_set_lines(bufnr, dest_lnum - 1, dest_lnum - 1, false, lines)
+  vim.api.nvim_buf_set_lines(bufnr, src.start_lnum - 1, src.end_lnum, false, {})
+  vim.api.nvim_buf_set_lines(bufnr, insert_lnum - 1, insert_lnum - 1, false, lines)
 
   relops_restore_state("post")
   notify("Moved " .. #lines .. " remote lines")
+end
+
+local function relops_uses_operator_mapping(name)
+  local spec = operator_mappings[name]
+  return spec and config.mappings[name] == spec.lhs
+end
+
+local function relops_operator_pending()
+  local operator = vim.v.operator
+
+  if operator == operator_mappings.delete.operator and relops_uses_operator_mapping("delete") then
+    return relops_delete()
+  elseif operator == operator_mappings.yank.operator and relops_uses_operator_mapping("yank") then
+    return relops_yank()
+  elseif operator == operator_mappings.change.operator and relops_uses_operator_mapping("change") then
+    return relops_change()
+  end
+
+  notify("Unsupported relops operator: " .. tostring(operator), vim.log.levels.ERROR)
+end
+
+local function relops_mark_or_move()
+  local ch = vim.fn.getcharstr()
+
+  if ch == "\027" or ch == "\003" or ch == "" then
+    return
+  end
+
+  if ch == "r" and config.mappings.enabled ~= false and config.mappings.move == "mr" then
+    relops_move()
+    return
+  end
+
+  pcall(vim.cmd.normal, { bang = true, args = { "m" .. ch } })
 end
 
 local function expect_table(path, value)
@@ -815,8 +861,8 @@ local function merged_config(opts)
   return merged
 end
 
-local function mapping_is_ours(name, lhs)
-  local ok, map = pcall(vim.fn.maparg, lhs, "n", false, true)
+local function mapping_is_ours(name, mode, lhs)
+  local ok, map = pcall(vim.fn.maparg, lhs, mode, false, true)
 
   if not ok or type(map) ~= "table" or not map.lhs or map.lhs == "" then
     return false
@@ -830,53 +876,87 @@ local function mapping_is_ours(name, lhs)
 end
 
 local function unmap(name)
-  local lhs = active_mappings[name]
+  local mapping = active_mappings[name]
 
-  if not lhs then
+  if not mapping then
     return
   end
 
-  if mapping_is_ours(name, lhs) then
-    pcall(vim.keymap.del, "n", lhs)
+  local mode = mapping.mode or "n"
+  local lhs = mapping.lhs
+
+  if mapping_is_ours(name, mode, lhs) then
+    pcall(vim.keymap.del, mode, lhs)
   end
 
   active_mappings[name] = nil
 end
 
-local function map_if_set(name, lhs, rhs)
+local function map_if_set(name, mode, lhs, rhs, opts)
   unmap(name)
 
   if lhs == nil or lhs == false or lhs == "" then
     return
   end
 
-  vim.keymap.set("n", lhs, rhs, {
+  local map_opts = vim.tbl_extend("force", {
     noremap = true,
     silent = true,
     desc = mapping_descriptions[name],
-  })
+  }, opts or {})
 
-  active_mappings[name] = lhs
+  vim.keymap.set(mode, lhs, rhs, map_opts)
+
+  active_mappings[name] = { mode = mode, lhs = lhs }
+end
+
+local function map_operator_pending_if_needed()
+  local needed = relops_uses_operator_mapping("delete")
+    or relops_uses_operator_mapping("yank")
+    or relops_uses_operator_mapping("change")
+
+  if not needed then
+    unmap("operator")
+    return
+  end
+
+  map_if_set("operator", "o", "r", "<Esc><Cmd>lua require('relops')._operator_pending()<CR>")
+end
+
+local function map_operation(name, lhs, rhs)
+  if relops_uses_operator_mapping(name) then
+    unmap(name)
+    return
+  end
+
+  map_if_set(name, "n", lhs, rhs)
 end
 
 function M.setup(opts)
   config = merged_config(opts)
 
   if config.mappings.enabled ~= false then
-    map_if_set("delete", config.mappings.delete, M.delete)
-    map_if_set("yank", config.mappings.yank, M.yank)
-    map_if_set("change", config.mappings.change, M.change)
-    map_if_set("move", config.mappings.move, M.move)
+    map_operation("delete", config.mappings.delete, M.delete)
+    map_operation("yank", config.mappings.yank, M.yank)
+    map_operation("change", config.mappings.change, M.change)
+    map_operator_pending_if_needed()
+
+    if config.mappings.move == "mr" then
+      map_if_set("move", "n", "m", relops_mark_or_move, { nowait = true })
+    else
+      map_if_set("move", "n", config.mappings.move, M.move)
+    end
   else
     unmap("delete")
     unmap("yank")
     unmap("change")
     unmap("move")
+    unmap("operator")
   end
 
   if config.undo.wrap ~= false then
-    map_if_set("undo", "u", M.undo)
-    map_if_set("redo", "<C-r>", M.redo)
+    map_if_set("undo", "n", "u", M.undo)
+    map_if_set("redo", "n", "<C-r>", M.redo)
   else
     unmap("undo")
     unmap("redo")
@@ -891,6 +971,7 @@ M.change = relops_change
 M.move = relops_move
 M.undo = relops_undo
 M.redo = relops_redo
+M._operator_pending = relops_operator_pending
 M.defaults = vim.deepcopy(default_config)
 M.version = "0.3.0"
 

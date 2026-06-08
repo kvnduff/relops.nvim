@@ -57,6 +57,10 @@ The default mappings are:
 | `cr` | Change a remote relative line or range |
 | `mr` | Move a remote relative line or range |
 
+The default mappings avoid Neovim's normal mapping timeout: `dr`, `yr`, and `cr`
+enter relops through an operator-pending `r`, and `mr` uses an immediate `m`
+dispatcher that forwards non-`r` keys to native mark setting.
+
 After the operation mapping, type a compact expression using relative line counts and `j` or `k` directions.
 
 In v0.3.0, the syntax changed to make the command intent clearer:
@@ -98,11 +102,11 @@ Do not add `j` or `k` after `0`.
 ### Move
 
 Move syntax includes a source and a destination.
-Move works on line contents rather than cutting lines out of the buffer.
-It captures the source contents, clears the source lines, inserts the captured contents at the
-visible destination coordinate, and shifts existing destination/downstream contents down.
-The buffer grows as needed to preserve shifted contents, and overlapping source/destination ranges are allowed.
-Registers receive the original moved contents.
+Move relocates whole lines: it captures the source lines, deletes them so the gap closes,
+then inserts them before the destination anchor. The destination is evaluated against the
+original visible buffer; when the destination is below the source, it shifts upward after
+the source is removed. The buffer line count stays stable, destination contents are preserved,
+and destinations inside the source range are rejected. Registers receive the original moved contents.
 
 ```text
 mr5j9j      move the single remote line 5 below to the line 9 below
@@ -117,9 +121,9 @@ mrr2j5j0    move 2j..5j to the current cursor line
 mrr5j09k    move 5j..current line so the range starts at the line 9k from the cursor
 ```
 
-For example, if `3j` and `4j` contain text and `10j` and `11j` already contain text,
-`mrr3j4j9j` clears `3j..4j`, writes the moved text at `9j..10j`, and shifts the old
-`9j` and later contents down by two lines.
+For example, `mrr3j4j9j` moves `3j..4j` to the original `9j` anchor. After the source
+is removed, original `9j` shifts up by two lines, and the moved text is inserted before
+that shifted anchor.
 
 ## Configuration
 
@@ -201,6 +205,9 @@ relops.version
 
 - Input after `dr`, `yr`, `cr`, or `mr` is read with `getcharstr()`, so native `showcmd`
   does not display the in-progress command.
+- The default `mr` timeout fix maps `m` and preserves native marks for non-`r` mark names.
+  If you rely on other normal-mode mappings that start with `m`, remap `move` to a less
+  conflicting key sequence.
 - The command parser intentionally accepts only the compact relative-line grammar documented above.
 - Clipboard writes to `+` and `*` are attempted when enabled, but ignored safely when those registers are unavailable.
 - Undo and redo wrapping is optional because overriding `u` and `<C-r>` is invasive.
