@@ -2,7 +2,7 @@
 
 Remote relative line operations for Neovim.
 
-Current release target: `v0.3.0`.
+Current release: `v0.3.0`.
 
 `relops.nvim` lets you act on lines away from the cursor without jumping to them first.
 It is useful when relative numbers show the target lines clearly and you want to delete, yank,
@@ -46,25 +46,6 @@ Then configure it from Lua:
 require("relops").setup()
 ```
 
-### Local path development
-
-```lua
--- lazy.nvim
-{
-  dir = "~/projects/relops/relops.nvim",
-  name = "relops.nvim",
-  opts = {},
-}
-
--- packer.nvim
-use {
-  "/home/kevin/projects/relops/relops.nvim",
-  config = function()
-    require("relops").setup()
-  end,
-}
-```
-
 ## Usage
 
 The default mappings are:
@@ -86,7 +67,7 @@ rr  remote range
 ```
 
 For the default mappings, `dr5j` deletes one remote line and `drr2j5j` deletes a remote range.
-The old v0.1 repeated-direction forms such as `dr15jj`, `yr15kk`, `mr13kk0`, and
+Pre-v0.3 repeated-direction forms such as `dr15jj`, `yr15kk`, `mr13kk0`, and
 `mr2j3j13j` are no longer the documented command syntax.
 Update macros, notes, and muscle memory to the v0.3.0 forms.
 

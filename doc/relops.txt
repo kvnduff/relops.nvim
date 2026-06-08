@@ -48,7 +48,7 @@ In v0.3.0, relops.nvim uses a clearer line/range distinction: >text
 <
 
 For the default mappings, dr5j deletes one remote line and drr2j5j deletes a
-remote range. The old v0.1 repeated-direction forms such as dr15jj, yr15kk,
+remote range. Pre-v0.3 repeated-direction forms such as dr15jj, yr15kk,
 mr13kk0, and mr2j3j13j are no longer the documented command syntax.
 
 Delete, yank, and change read one remote target after the operation mapping:
