@@ -1,6 +1,7 @@
 local M = {}
 
 local core = require("relops.core")
+local preview = require("relops.preview")
 
 local default_config = {
   mappings = {
@@ -18,6 +19,15 @@ local default_config = {
     group = "IncSearch",
     duration = 180,
   },
+  preview = {
+    enabled = false,
+    border = "rounded",
+    max_height = 7,
+    label_group = "Title",
+    number_group = "LineNr",
+    hint_group = "Comment",
+    expression_group = "CursorLine",
+  },
   clipboard = {
     unnamed = true,
     yank_register = true,
@@ -32,6 +42,8 @@ local default_config = {
 }
 
 local config = vim.deepcopy(default_config)
+
+preview.configure(config)
 local state_ns = vim.api.nvim_create_namespace("relops_state")
 local flash_ns = vim.api.nvim_create_namespace("relops_flash")
 
@@ -243,7 +255,7 @@ local function relops_redo()
   end
 end
 
-local function relops_read_range()
+local function relops_read_range_loop(op)
   local chars = ""
   local count = core.count_pattern(true)
   local count_prefix = core.count_pattern(false)
@@ -257,6 +269,8 @@ local function relops_read_range()
     end
 
     chars = chars .. ch
+
+    preview.update(op, chars)
 
     local single, single_dir = chars:match("^" .. count .. "([jk])$")
 
@@ -294,7 +308,25 @@ local function relops_read_range()
   end
 end
 
-local function relops_read_move()
+local function relops_read_range(op)
+  if not config.preview.enabled then
+    return relops_read_range_loop(op)
+  end
+
+  preview.update(op, "")
+
+  local ok, n1, dir1, n2, dir2 = pcall(relops_read_range_loop, op)
+
+  preview.close()
+
+  if not ok then
+    error(n1, 0)
+  end
+
+  return n1, dir1, n2, dir2
+end
+
+local function relops_read_move_loop()
   local chars = ""
   local count = core.count_pattern(true)
   local count_prefix = core.count_pattern(false)
@@ -308,6 +340,8 @@ local function relops_read_move()
     end
 
     chars = chars .. ch
+
+    preview.update("move", chars)
 
     local source, source_dir, dest, dest_dir =
       chars:match("^" .. count .. "([jk])" .. count .. "([jk])$")
@@ -406,8 +440,26 @@ local function relops_read_move()
   end
 end
 
+local function relops_read_move()
+  if not config.preview.enabled then
+    return relops_read_move_loop()
+  end
+
+  preview.update("move", "")
+
+  local ok, move = pcall(relops_read_move_loop)
+
+  preview.close()
+
+  if not ok then
+    error(move, 0)
+  end
+
+  return move
+end
+
 local function relops_yank()
-  local n1, dir1, n2, dir2 = relops_read_range()
+  local n1, dir1, n2, dir2 = relops_read_range("yank")
 
   if not n1 then
     return
@@ -435,7 +487,7 @@ local function relops_yank()
 end
 
 local function relops_delete()
-  local n1, dir1, n2, dir2 = relops_read_range()
+  local n1, dir1, n2, dir2 = relops_read_range("delete")
 
   if not n1 then
     return
@@ -492,7 +544,7 @@ local function relops_delete()
 end
 
 local function relops_change()
-  local n1, dir1, n2, dir2 = relops_read_range()
+  local n1, dir1, n2, dir2 = relops_read_range("change")
 
   if not n1 then
     return
@@ -760,6 +812,7 @@ local function validate_opts(opts)
   expect_table("mappings", opts.mappings)
   expect_table("syntax", opts.syntax)
   expect_table("yank_highlight", opts.yank_highlight)
+  expect_table("preview", opts.preview)
   expect_table("clipboard", opts.clipboard)
   expect_table("undo", opts.undo)
   expect_boolean("notifications", opts.notifications)
@@ -780,6 +833,16 @@ local function validate_opts(opts)
     expect_boolean("yank_highlight.enabled", opts.yank_highlight.enabled)
     expect_string("yank_highlight.group", opts.yank_highlight.group)
     expect_number("yank_highlight.duration", opts.yank_highlight.duration)
+  end
+
+  if opts.preview then
+    expect_boolean("preview.enabled", opts.preview.enabled)
+    expect_string("preview.border", opts.preview.border)
+    expect_number("preview.max_height", opts.preview.max_height)
+    expect_string("preview.label_group", opts.preview.label_group)
+    expect_string("preview.number_group", opts.preview.number_group)
+    expect_string("preview.hint_group", opts.preview.hint_group)
+    expect_string("preview.expression_group", opts.preview.expression_group)
   end
 
   if opts.clipboard then
@@ -882,6 +945,8 @@ end
 
 function M.setup(opts)
   config = merged_config(opts)
+
+  preview.configure(config)
 
   if config.mappings.enabled ~= false then
     map_operation("delete", config.mappings.delete, M.delete)
