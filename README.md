@@ -151,6 +151,15 @@ require("relops").setup({
     group = "IncSearch",
     duration = 180,
   },
+  preview = {
+    enabled = false,
+    border = "rounded",
+    max_height = 7,
+    label_group = "Title",
+    number_group = "LineNr",
+    hint_group = "Comment",
+    expression_group = "CursorLine",
+  },
   clipboard = {
     unnamed = true,
     yank_register = true,
@@ -176,6 +185,33 @@ require("relops").setup({
   },
 })
 ```
+
+### Command preview
+
+By default, `relops.nvim` does not show a preview while a command is pending. Enable it to see the
+lines each direction key would act on:
+
+```lua
+require("relops").setup({
+  preview = {
+    enabled = true,
+  },
+})
+```
+
+The preview opens above the statusline as soon as relops takes over input and closes when the
+command completes or is cancelled. Its border title names the plugin and what the syntax accepts
+next. The keys typed so far sit on their own shaded line, ruled off with a dotted divider and named
+with the operation on the left; that line stands in for the cursor, so `k` candidates render above
+it and `j` candidates below. Each candidate carries its relative offset, absolute line number, and
+content, highlighted with the source buffer's syntax. A range shows its first line, a count of the
+lines between, and its last line. A move destination shows the lines that would end up directly
+above and below the moved block. A candidate outside the buffer is dimmed and names the edge it ran
+past. A move destination inside the source range is dimmed the same way.
+
+The window is at most `max_height` lines tall. The default 7 is the height of the tallest preview,
+so a smaller value clips the bottom rows of the preview. A value below 1 is raised to 1, the height
+of the expression line.
 
 ### Undo and redo wrapping
 
@@ -209,7 +245,9 @@ relops.version
 ## Known tradeoffs
 
 - Input after `dr`, `yr`, `cr`, or `mr` is read with `getcharstr()`, so native `showcmd`
-  does not display the in-progress command.
+  does not display the in-progress command. Enable `preview` to see the pending command instead.
+- The preview window does not wrap, so a line wider than the window is truncated without a marker.
+- The preview hint renders in the window's border title, so `preview.border = "none"` hides it.
 - The default `mr` timeout fix maps `m` and preserves native marks for non-`r` mark names.
   If you rely on other normal-mode mappings that start with `m`, remap `move` to a less
   conflicting key sequence.

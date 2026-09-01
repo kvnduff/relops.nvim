@@ -1,0 +1,5 @@
+[selene]
+name = "vim"
+
+[vim]
+any = true
