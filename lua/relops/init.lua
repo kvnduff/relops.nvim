@@ -1,5 +1,7 @@
 local M = {}
 
+local core = require("relops.core")
+
 local default_config = {
   mappings = {
     enabled = true,
@@ -59,12 +61,8 @@ local function notify(message, level)
   end
 end
 
-local function relops_buf_line_count(bufnr)
-  return vim.api.nvim_buf_line_count(bufnr)
-end
-
 local function relops_clamp_lnum_col(bufnr, lnum, col)
-  local last = relops_buf_line_count(bufnr)
+  local last = core.buf_line_count(bufnr)
   lnum = math.max(1, math.min(lnum, last))
 
   local line = vim.api.nvim_buf_get_lines(bufnr, lnum - 1, lnum, false)[1] or ""
@@ -90,63 +88,6 @@ local function relops_set_view(bufnr, lnum, col, screen_offset)
   end
 
   vim.fn.winrestview(view)
-end
-
-local function relops_dir_to_mult(dir)
-  if dir == "j" then
-    return 1
-  elseif dir == "k" then
-    return -1
-  end
-
-  return nil
-end
-
-local function relops_pattern_escape(value)
-  return (value:gsub("([^%w])", "%%%1"))
-end
-
-local function relops_count_pattern(capture)
-  if capture then
-    return "([1-9]%d*)"
-  end
-
-  return "[1-9]%d*"
-end
-
-local function relops_current_line_pattern()
-  return relops_pattern_escape(config.syntax.current_line)
-end
-
-local function relops_relative_lnum(cur_lnum, n, dir)
-  local mult = relops_dir_to_mult(dir)
-
-  if not mult then
-    return nil
-  end
-
-  return cur_lnum + mult * n
-end
-
-local function relops_compute_range(cur_lnum, n1, dir1, n2, dir2)
-  local l1 = relops_relative_lnum(cur_lnum, n1, dir1)
-  local l2 = relops_relative_lnum(cur_lnum, n2, dir2)
-
-  if not l1 or not l2 then
-    return nil
-  end
-
-  return {
-    lnum1 = l1,
-    lnum2 = l2,
-    start_lnum = math.min(l1, l2),
-    end_lnum = math.max(l1, l2),
-  }
-end
-
-local function relops_range_valid(bufnr, range)
-  local last = relops_buf_line_count(bufnr)
-  return range.start_lnum >= 1 and range.end_lnum <= last
 end
 
 local function set_linewise_register(reg, lines)
@@ -304,9 +245,9 @@ end
 
 local function relops_read_range()
   local chars = ""
-  local count = relops_count_pattern(true)
-  local count_prefix = relops_count_pattern(false)
-  local current = relops_current_line_pattern()
+  local count = core.count_pattern(true)
+  local count_prefix = core.count_pattern(false)
+  local current = core.pattern_escape(config.syntax.current_line)
 
   while true do
     local ch = vim.fn.getcharstr()
@@ -355,9 +296,9 @@ end
 
 local function relops_read_move()
   local chars = ""
-  local count = relops_count_pattern(true)
-  local count_prefix = relops_count_pattern(false)
-  local current = relops_current_line_pattern()
+  local count = core.count_pattern(true)
+  local count_prefix = core.count_pattern(false)
+  local current = core.pattern_escape(config.syntax.current_line)
 
   while true do
     local ch = vim.fn.getcharstr()
@@ -475,9 +416,9 @@ local function relops_yank()
   local bufnr = vim.api.nvim_get_current_buf()
   local cur_lnum = vim.api.nvim_win_get_cursor(0)[1]
 
-  local range = relops_compute_range(cur_lnum, n1, dir1, n2, dir2)
+  local range = core.compute_range(cur_lnum, n1, dir1, n2, dir2)
 
-  if not range or not relops_range_valid(bufnr, range) then
+  if not range or not core.range_valid(bufnr, range) then
     notify("Range is outside the buffer", vim.log.levels.ERROR)
     return
   end
@@ -505,9 +446,9 @@ local function relops_delete()
   local cur = vim.api.nvim_win_get_cursor(0)
   local cur_lnum, cur_col = cur[1], cur[2]
 
-  local range = relops_compute_range(cur_lnum, n1, dir1, n2, dir2)
+  local range = core.compute_range(cur_lnum, n1, dir1, n2, dir2)
 
-  if not range or not relops_range_valid(bufnr, range) then
+  if not range or not core.range_valid(bufnr, range) then
     notify("Range is outside the buffer", vim.log.levels.ERROR)
     return
   end
@@ -524,7 +465,7 @@ local function relops_delete()
   local post_lnum, post_col
 
   if includes_cursor then
-    local future_last = math.max(1, relops_buf_line_count(bufnr) - #lines)
+    local future_last = math.max(1, core.buf_line_count(bufnr) - #lines)
     post_lnum = math.min(range.start_lnum, future_last)
     post_col = 0
   else
@@ -562,9 +503,9 @@ local function relops_change()
   local cur = vim.api.nvim_win_get_cursor(0)
   local cur_lnum, cur_col = cur[1], cur[2]
 
-  local range = relops_compute_range(cur_lnum, n1, dir1, n2, dir2)
+  local range = core.compute_range(cur_lnum, n1, dir1, n2, dir2)
 
-  if not range or not relops_range_valid(bufnr, range) then
+  if not range or not core.range_valid(bufnr, range) then
     notify("Range is outside the buffer", vim.log.levels.ERROR)
     return
   end
@@ -591,7 +532,7 @@ local function relops_change()
 
   vim.api.nvim_buf_set_lines(bufnr, range.start_lnum - 1, range.end_lnum, false, { "" })
 
-  local last = relops_buf_line_count(bufnr)
+  local last = core.buf_line_count(bufnr)
   local insert_lnum = math.min(range.start_lnum, last)
   insert_lnum = math.max(1, insert_lnum)
 
@@ -641,15 +582,10 @@ local function relops_move()
   local cur = vim.api.nvim_win_get_cursor(0)
   local cur_lnum, cur_col = cur[1], cur[2]
 
-  local src = relops_compute_range(
-    cur_lnum,
-    move.source_n1,
-    move.source_dir1,
-    move.source_n2,
-    move.source_dir2
-  )
+  local src =
+    core.compute_range(cur_lnum, move.source_n1, move.source_dir1, move.source_n2, move.source_dir2)
 
-  if not src or not relops_range_valid(bufnr, src) then
+  if not src or not core.range_valid(bufnr, src) then
     notify("Source range is outside the buffer", vim.log.levels.ERROR)
     return
   end
@@ -659,7 +595,7 @@ local function relops_move()
   if move.dest_here then
     dest_lnum = cur_lnum
   else
-    dest_lnum = relops_relative_lnum(cur_lnum, move.dest_n, move.dest_dir)
+    dest_lnum = core.relative_lnum(cur_lnum, move.dest_n, move.dest_dir)
   end
 
   if not dest_lnum then
@@ -667,7 +603,7 @@ local function relops_move()
     return
   end
 
-  local last = relops_buf_line_count(bufnr)
+  local last = core.buf_line_count(bufnr)
 
   if dest_lnum < 1 or dest_lnum > last then
     notify("Move destination is outside the buffer", vim.log.levels.ERROR)
